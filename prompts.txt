@@ -1,0 +1,157 @@
+======================================================================
+GÖMÜLÜ SİSTEMLER PROJESİ YAPAY ZEKA VE MÜHENDİSLİK PROMPT GÜNLÜĞÜ
+======================================================================
+Öğrenci No : 170425508
+Adı Soyadı : Ferhat Kara
+Proje Adı  : Embedded Linux Telemetry System & Character Driver Analysis
+----------------------------------------------------------------------
+
+Bu günlük, gömülü Linux projesinin Aşama 1'den Aşama 6'ya kadar olan tüm
+geliştirme safhalarında Yapay Zeka (AI) asistanına verilen yapılandırılmış
+promptları, bu promptlar neticesinde karşılaşılan sistem/mimari kısıtlamalarını
+ve screenshots/ klasöründeki teknik görsellerle eşleşen hata ayıklama (debugging)
+süreçlerini belgeleyen resmi mühendislik dokümanıdır.
+
+======================================================================
+AŞAMA 1: TELEMETRİ UYGULAMASI VE ÇAPRAZ DERLEME (CROSS-COMPILATION)
+======================================================================
+[İLGİLİ GÖRSELLER]:
+  * 01_stage1_c_implicit_error.png
+  * 02_stage1_cross_compile_elf.png
+  * 12_stage1_source_code_macro_check.png
+  * 13_stage1_armv7_cross_build_success.png
+
+----------------------------------------------------------------------
+PROMPT-1 (Uygulama İskeletinin İstemi):
+----------------------------------------------------------------------
+"Act as an Embedded Linux Expert. I need a robust and clean C application for an ARM architecture (specifically targeting ARMv7 or Cortex-A9, which I will run on QEMU later).
+The application will be a 'Telemetry System'. It should:
+- Simulate three types of data: Temperature (float), System Load (int 0-100), and a Status Flag (boolean).
+- Generate and print these telemetry values to the stdout every 1 second in a structured format (e.g., [TIMESTAMP] TEMP: 24.5C | LOAD: 42% | STATUS: OK).
+- Use standard Linux libraries, keep it modular, and handle safe termination (like catching SIGINT/Ctrl+C) so it shuts down gracefully.
+Please provide: The complete, production-ready telemetry.c source code. Detailed explanation of the code structure. The exact cross-compilation command using arm-linux-gnueabihf-gcc."
+
+----------------------------------------------------------------------
+PROMPT-2 (POSIX Makro ve Derleme Hatası Çözümü):
+----------------------------------------------------------------------
+"When I tried to cross-compile the code with arm-linux-gnueabihf-gcc -Wall -Wextra -O2 -std=c11 telemetry.c -o telemetry, I received the following compiler errors and warnings:
+- warning: implicit declaration of function 'localtime_r'
+- error: storage size of 'sa' isn't known (for struct sigaction sa)
+- warning: implicit declaration of function 'sigaction'
+It seems like feature test macros like #define _POSIX_C_SOURCE or #define _DEFAULT_SOURCE are missing before the standard headers when compiled with -std=c11. Please update the telemetry.c file to fix these POSIX/GNU extension visibility issues so it cross-compiles flawlessly."
+
+- KRİZ VE DEBUGGING ANALİZİ: strict C11 standardı (-std=c11), glibc kütüphanesindeki bazı POSIX uzantılarını varsayılan olarak maskeler. Çözüm olarak kodun en üstüne kütüphanelerden önce '#define _POSIX_C_SOURCE 200809L' makrosu enjekte edilmiş ve mimari 'file telemetry' komutuyla doğrulanarak ELF 32-bit ARM yapısı elde edilmiştir.
+
+======================================================================
+AŞAMA 2: KÖK DOSYA SİSTEMİNİN (ROOTFS) BUSYBOX İLE İNŞASI
+======================================================================
+[İLGİLİ GÖRSELLER]:
+  * 03_stage2_busybox_syntax_error.png
+  * 04_stage2_wsl_ntfs_pattern_stop.png
+  * 05_stage2_busybox_blocks_check.png
+  * 14_stage2_busybox_fchown_warning.png
+  * 16_stage2_rootfs_structure_check.png
+  * 21_stage2_rootfs_23blocks_success.png
+
+----------------------------------------------------------------------
+PROMPT-3 (RootFS Otomasyon Betiği İstemi):
+----------------------------------------------------------------------
+"Act as an Embedded Linux Engineer. I need to create a minimal BusyBox-based RootFS for an ARM system that will later be booted via QEMU. Please write a comprehensive, automated Bash script (make_rootfs.sh) that builds this RootFS from scratch. The script should:
+- Download, extract, and clean BusyBox (use a stable version like 1.36.1 or similar).
+- Configure BusyBox with make defconfig and alter the configuration to build it as a static binary (CONFIG_STATIC=y) so we don't have to deal with missing shared library dependency errors on the target system.
+- Compile and install BusyBox into a local staging directory.
+- Create the essential Linux directory tree structure inside the staging directory: /dev, /etc, /proc, /sys, /usr/bin, /usr/sbin, /root, /mnt.
+- Create basic runtime configuration files inside /etc: /etc/inittab (to handle system initialization and open a non-login serial console shell), /etc/init.d/rcS (startup script to mount /proc and /sys filesystems, make sure to chmod +x it).
+- Package everything into a clean initial ramdisk image (rootfs.cpio.gz).
+Provide the full script, step-by-step documentation, and a directory tree structure overview of the resulting RootFS."
+
+----------------------------------------------------------------------
+PROMPT-4 (Bash Sözdizimi ve Windows Dosya Sistemi Engeli):
+----------------------------------------------------------------------
+"When I ran the make_rootfs.sh script, it gave the following syntax error: make_rootfs.sh: line 152: syntax error near unexpected token '}'
+It looks like the multi-line brace expansion inside the create_rootfs_layout() function is causing a syntax issue in Bash because of the spaces and newlines inside { dev, etc, ... }. Please fix this specific function by writing the mkdir -p command with proper single-line brace expansion (without spaces/newlines) or explicit paths, and provide the fully corrected make_rootfs.sh script."
+
+- KRİZ VE DEBUGGING ANALİZİ: Yapay zekanın ürettiği scriptteki çok satırlı parantez genişletmesi hatası düzeltildikten sonra, Windows altındaki NTFS disk havuzunda (/mnt/c/users/ferhat kara/...) boşluk içeren kullanıcı isimleri yüzünden GNU Make motorunun 'Stop.' hatası verdiği saptandı. Ayrıca NTFS üzerinde gömülü Linux için kritik olan 'mknod' (özel aygıt düğümü) izinlerinin Windows güvenlik katmanına takıldığı görüldü (Görsel 15 ve 19). Bu kritik aşamada proje tamamen saf Linux ext4 ev dizinine (~/works/...) taşınarak tüm tıkanıklık aşılmış ve kararlı 23 blok boyutlu rootfs.cpio.gz mühürlenmiştir.
+
+======================================================================
+AŞAMA 3: EMÜLASYON VE DEPO UYUMSUZLUKLARI (QEMU DEBUGGING)
+======================================================================
+[İLGİLİ GÖRSELLER]:
+  * 06_stage3_raw_github_404_error.png
+  * 07_stage3_qemu_system_arm_not_found.png
+  * 09_stage3_shifter_media_certificate_error.png
+  * 10_stage3_shifter_media_404_error.png
+  * 11_stage3_wsl_ext4_fix.png
+  * 22_stage3_ports_ubuntu_404_error.png
+  * 23_stage3_kernel_download_404_error.png
+  * 24_stage3_qemu_could_not_load_kernel.png
+  * 25_stage3_apt_unable_to_locate_armhf.png
+  * 26_stage3_apt_busybox_locate_failed.png
+  * 27_stage3_qemu_missing_kernel_retry.png
+  * 28_stage3_ubuntu_noble_depo_clash.png
+  * 29_stage3_rootfs_structure_check_v2.png
+  * 30_stage3_qemu_kernel_load_fault_final.png
+
+----------------------------------------------------------------------
+PROMPT-5 (QEMU Emülasyon ve Kernel Tedariği İstemi):
+----------------------------------------------------------------------
+"Act as an Embedded Linux Systems Engineer. I have successfully cross-compiled my telemetry application and generated a minimal BusyBox static rootfs packaged as rootfs.cpio.gz for ARMv7 (Cortex-A9 / vexpress-a9). Now, I need to boot this system using QEMU.
+Please provide a reliable, trusted URL or a standard method to download a pre-compiled Linux kernel zImage compatible with QEMU's vexpress-a9 machine (e.g., from kernel.org or official Debian/Ubuntu embedded test kernels).
+Provide the exact, complete qemu-system-arm command to boot this setup. The command must use the vexpress-a9 machine type, map 256MB of RAM, disable the graphical interface (-nographic), attach our rootfs.cpio.gz as the initrd, and pass the appropriate kernel arguments (console=ttyAMA0 rdinit=/sbin/init) so we can land directly on a functional BusyBox shell. Explain each flag used in the QEMU command in detail for my technical report."
+
+- KRİZ VE DEBUGGING ANALİZİ: Çevrimiçi test kaynaklarının (raw.githubusercontent veya shifter.media gibi) zamanla linklerinin kırılması ve Ubuntu 24.04 Noble Numbat ana paket depolarının 32-bit ARM (armhf) mimari paketlerini barındırmayıp '404 Not Found' / 'Unable to locate package' döndürmesi sebebiyle QEMU 'could not load kernel zImage' hatası fırlatmıştır. Analiz neticesinde Ubuntu'nun bu paketleri 'ports.ubuntu.com' adresine taşıdığı saptanmış, sisteme 'sudo dpkg --add-architecture armhf' çekilerek multiarch yapısı aktif edilmiş ve kriz çözülmüştür.
+
+======================================================================
+AŞAMA 4: PROSESLER ARASI HABERLEŞME VE BUFFER OPTİMİZASYONU (IPC)
+======================================================================
+[İLGİLİ GÖRSELLER]:
+  * 39_stage4_dts_and_ipc_script_write.png
+  * 40_stage4_ipc_buffer_blocking_bug.jpg
+  * 41_stage4_ipc_perfect_sync_final.png
+
+----------------------------------------------------------------------
+PROMPT-6 (Süreçler Arası Haberleşme İstemi):
+----------------------------------------------------------------------
+"Act as an Embedded Linux Developer. I need to implement Stage 4 (IPC System) of my project. Please write a modular C application named telemetry_ipc.c that uses fork() and a Linux pipe() for parent-child communication.
+- Child Process: Acts as the data generator (sensor). Every 1 second, it generates simulated telemetry data (Temperature as float, System Load as int) and writes this data as a structured struct directly into the pipe.
+- Parent Process: Acts as the telemetry handler. It reads the struct from the pipe, adds a readable timestamp using localtime_r, evaluates the status (OK/FAIL), and prints the formatted output to stdout.
+The application must use standard POSIX features, handle graceful shutdown with sigaction (catching SIGINT/SIGTERM in both processes safely), and include #define _POSIX_C_SOURCE 200809L to prevent the compile errors we saw earlier. Please provide the full source code and the exact cross-compilation command using arm-linux-gnueabihf-gcc."
+
+- KRİZ VE DEBUGGING ANALİZİ (Görsel 40 ve 41): Proje isterleri doğrultusunda canlı test ortamı oluşturulup verici boru hattına yönlendirildiğinde (`./telemetry_local > /tmp/telemetry_fifo`), Linux çekirdeğinin standart çıktıyı terminal dışı yapılarda 'fully-buffered' (tam arabellek) moduna zorladığı keşfedilmiştir. Bu durum alıcı ekranda verilerin kırılmasına ve gecikmesine yol açmıştır. Kod seviyesinde müdahale edilerek vericiye `setvbuf(stdout, NULL, _IOLBF, 0);` eklenmiş, akış satır bazlı arabelleğe (Line-Buffered) zorlanarak kusursuz, kayıpsız ve anlık anlık akan tam senkronize telemetri IPC istasyonu ayağa kaldırılmıştır (Görsel 41).
+
+======================================================================
+AŞAMA 5: CIHAZ AĞACI MANİPÜLASYONU (DEVICE TREE MANIPULATION)
+======================================================================
+[İLGİLİ GÖRSELLER]:
+  * 20_stage5_device_tree_led_node.png
+
+----------------------------------------------------------------------
+PROMPT-7 (Device Tree Tasarım İstemi):
+----------------------------------------------------------------------
+"Act as an Embedded Linux Kernel Expert. I am working on Stage 5 (Device Tree Manipulation) of my Embedded Linux project for an ARM architecture. Please provide a clean, compliant Device Tree Source (DTS) snippet that adds a custom peripheral node to an existing device tree. The requirements are:
+- Create a node named telemetry_led representing a status LED connected to a GPIO controller.
+- Set the compatible string to something appropriate like "gpio-leds".
+- Define its property to be active-high and map it to a specific GPIO pin (e.g., GPIO bank 1, pin 15).
+- Ensure the syntax is completely valid for standard Linux DTS compilation.
+Also, provide a detailed technical explanation of each line/property (such as compatible, reg, gpios, status) so I can document it thoroughly in my engineering report."
+
+- SİSTEM MÜHENDİSLİĞİ KATKISI: ARM tabanlı mimaride donanımı kernel katmanına bağımsız olarak tanımlayan DTS sözdizimi analiz edilmiş; `compatible = "gpio-leds";` eşleşmesi sayesinde ek bir çekirdek sürücüsü yazmaya gerek kalmaksızın donanımın otomatik olarak sysfs katmanına maplenme teorisi belgelenmiştir.
+
+======================================================================
+AŞAMA 6: KARAKTER SÜRÜCÜ (CHARACTER DRIVER) ANALİZİ
+======================================================================
+[İLGİLİ GÖRSELLER]:
+  * 21_stage6_driver_fops_mapping.png
+
+----------------------------------------------------------------------
+PROMPT-8 (Karakter Sürücü Tasarımı ve Güvenlik İstemi):
+----------------------------------------------------------------------
+"Act as an Embedded Linux Kernel Developer. I am completing Stage 6 (Driver Analysis) of my project. Please provide a clean and well-commented C example of a basic Linux Character Driver (e.g., telemetry_driver.c) that implements standard read and write operations.
+After the code, provide a rigorous engineering analysis that explains:
+1. The Kernel Module Lifecycle: Detailed explanation of module_init() and module_exit(), and what happens inside the kernel space when insmod and rmmod are invoked.
+2. The file_operations Structure: How the kernel maps userspace system calls (open, read, write, close) to the driver's internal functions using this structure.
+3. The copy_to_user() and copy_from_user() Mechanics: Why we cannot use standard memcpy() between kernel space and userspace, and how these security functions safeguard the kernel memory.
+Make the tone highly professional and technical for my final university project report."
+
+- SİSTEM MÜHENDİSLİĞİ KATKISI: Sanal dosya sistemi (VFS) üzerindeki sistem çağrılarının (`open`, `read`, `write`) sürücü tarafındaki fonksiyon işaretçilerine haritalanması incelenmiştir. Kullanıcı alanı ile çekirdek alanının katı bellek izolasyonu nedeniyle standart `memcpy` fonksiyonunun neden ölümcül sayfa hatalarına (page fault) ve güvenlik açıklarına yol açacağı, `copy_to_user` ve `copy_from_user` fonksiyonlarının donanımsal adres geçerleme süreçleri üzerinden analiz edilerek teknik rapora işlenmiştir.
+======================================================================
