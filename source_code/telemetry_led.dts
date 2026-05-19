@@ -1,0 +1,19 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+    compatible = "vexpress,v2p-ca9";
+
+    leds {
+        compatible = "gpio-leds";
+
+        telemetry_status_led {
+            label = "telemetry-status";
+            gpios = <&gpio1 15 GPIO_ACTIVE_HIGH>;
+            default-state = "off";
+            status = "okay";
+        };
+    };
+};
