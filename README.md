@@ -102,4 +102,3 @@ Detaylı hata günlükleri ve açıklamalar için `prompts.txt` dosyasına bakı
 
 ---
 
-Güncelleme: README dosyası biçimlendirildi ve kod blokları, başlık yapıları ile maddelemeler düzeltildi.
